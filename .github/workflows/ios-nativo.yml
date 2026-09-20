@@ -1,0 +1,238 @@
+# Compila la app NATIVA de iOS (.ipa) en la nube, sin Mac.
+#
+# Es una app de verdad (SwiftUI + MapKit), no una web con puente. El proyecto se genera
+# con XcodeGen en el propio runner: así no hay que subir un .xcodeproj (que es lo que suele
+# romper las compilaciones).
+#
+# Va SIN FIRMAR a propósito: AltStore/AltServer la firma al instalarla.
+#
+# Se lanza A MANO desde la pestaña Actions.
+
+name: Compilar app iOS NATIVA (.ipa)
+
+on:
+  workflow_dispatch:
+
+run-name: Nativa ${{ github.run_number }}
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      # ICONO DE LA APP, LOGO de la animación de arranque y color de la pantalla de
+      # arranque. Los ficheros buenos ya están en el repo (recursos/icono-1024.png y
+      # public/icons/logo-sin-fondo.png): se copian al catálogo para no duplicarlos.
+      - name: Icono, logo y pantalla de arranque
+        run: |
+          CAT=nativo-ios/Fuentes/Assets.xcassets
+          mkdir -p "$CAT/AppIcon.appiconset" "$CAT/FondoArranque.colorset" "$CAT/Logo.imageset"
+          if [ ! -f recursos/icono-1024.png ]; then
+            echo '❌ falta recursos/icono-1024.png (el icono de la app)'
+            exit 1
+          fi
+          if [ ! -f public/icons/logo-sin-fondo.png ]; then
+            echo '❌ falta public/icons/logo-sin-fondo.png (el logo de la animación)'
+            exit 1
+          fi
+          cp recursos/icono-1024.png "$CAT/AppIcon.appiconset/icono-1024.png"
+          cp public/icons/logo-sin-fondo.png "$CAT/Logo.imageset/logo-sin-fondo.png"
+          cat > "$CAT/Logo.imageset/Contents.json" <<'JSON'
+          {
+            "images": [
+              { "filename": "logo-sin-fondo.png", "idiom": "universal", "scale": "1x" },
+              { "idiom": "universal", "scale": "2x" },
+              { "idiom": "universal", "scale": "3x" }
+            ],
+            "info": { "author": "xcode", "version": 1 }
+          }
+          JSON
+          cat > "$CAT/AppIcon.appiconset/Contents.json" <<'JSON'
+          {
+            "images": [
+              {
+                "filename": "icono-1024.png",
+                "idiom": "universal",
+                "platform": "ios",
+                "size": "1024x1024"
+              }
+            ],
+            "info": { "author": "xcode", "version": 1 }
+          }
+          JSON
+          # Color del tema oscuro de la app (#0a0f16) para la pantalla de arranque
+          cat > "$CAT/FondoArranque.colorset/Contents.json" <<'JSON'
+          {
+            "colors": [
+              {
+                "color": {
+                  "color-space": "srgb",
+                  "components": { "alpha": "1.000", "blue": "0.086", "green": "0.058", "red": "0.039" }
+                },
+                "idiom": "universal"
+              }
+            ],
+            "info": { "author": "xcode", "version": 1 }
+          }
+          JSON
+          cat > "$CAT/Contents.json" <<'JSON'
+          { "info": { "author": "xcode", "version": 1 } }
+          JSON
+          ls -la "$CAT" "$CAT/AppIcon.appiconset"
+
+      # LAS DOS IMÁGENES DE NAVEGACIÓN: el coche (coche_nav.png) y la persona
+      # (persona_nav.png), las dos sin fondo. Se copian al catálogo como CocheNav y
+      # PersonaNav, que son las que pone el mapa en tu posición.
+      - name: Iconos de navegación (coche y persona)
+        run: |
+          CAT=nativo-ios/Fuentes/Assets.xcassets
+          for par in coche_nav:CocheNav persona_nav:PersonaNav; do
+            origen="${par%%:*}"
+            nombre="${par##*:}"
+            if [ ! -f "recursos/$origen.png" ]; then
+              echo "❌ falta recursos/$origen.png"
+              exit 1
+            fi
+            mkdir -p "$CAT/$nombre.imageset"
+            cp "recursos/$origen.png" "$CAT/$nombre.imageset/$origen.png"
+            printf '%s\n' \
+              '{' \
+              '  "images": [' \
+              "    { \"filename\": \"$origen.png\", \"idiom\": \"universal\", \"scale\": \"1x\" }," \
+              '    { "idiom": "universal", "scale": "2x" },' \
+              '    { "idiom": "universal", "scale": "3x" }' \
+              '  ],' \
+              '  "info": { "author": "xcode", "version": 1 }' \
+              '}' > "$CAT/$nombre.imageset/Contents.json"
+            echo "✅ $nombre desde recursos/$origen.png"
+          done
+
+      # IMÁGENES DE LOS TIPOS DE RADAR: son las mismas que usa la web en el cartel de
+      # aviso (public/radar/*.png). Se copian al catálogo como RadarFixed, RadarMobile…
+      # (sin arrays asociativos: el bash de macOS es el 3.2 y no los tiene)
+      - name: Imágenes de los tipos de radar
+        run: |
+          CAT=nativo-ios/Fuentes/Assets.xcassets
+          for par in fixed:RadarFixed mobile:RadarMobile section:RadarSection redlight:RadarRedlight tunnel:RadarTunnel belt:RadarBelt; do
+            origen="${par%%:*}"
+            nombre="${par##*:}"
+            if [ ! -f "public/radar/$origen.png" ]; then
+              echo "❌ falta public/radar/$origen.png"
+              exit 1
+            fi
+            mkdir -p "$CAT/$nombre.imageset"
+            cp "public/radar/$origen.png" "$CAT/$nombre.imageset/$origen.png"
+            printf '%s\n' \
+              '{' \
+              '  "images": [' \
+              "    { \"filename\": \"$origen.png\", \"idiom\": \"universal\", \"scale\": \"1x\" }," \
+              '    { "idiom": "universal", "scale": "2x" },' \
+              '    { "idiom": "universal", "scale": "3x" }' \
+              '  ],' \
+              '  "info": { "author": "xcode", "version": 1 }' \
+              '}' > "$CAT/$nombre.imageset/Contents.json"
+            echo "✅ $nombre"
+          done
+          ls -la "$CAT"
+
+      - name: Generar el proyecto de Xcode
+        run: |
+          cd nativo-ios
+          xcodegen generate
+          echo '--- fuentes ---'
+          ls -la Fuentes
+          echo '--- Info.plist ---'
+          /usr/libexec/PlistBuddy -c "Print" Info.plist
+
+      # LA VERSIÓN DE CADA TANDA: se pone el número de compilación, para poder saber
+      # EXACTAMENTE qué versión hay instalada (sale en Ajustes → Acerca de).
+      - name: Poner la versión de esta tanda
+        run: |
+          PLIST=nativo-ios/Info.plist
+          NUM="${{ github.run_number }}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.$NUM" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 2.$NUM" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NUM" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NUM" "$PLIST"
+          echo "versión: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST"))"
+
+      # COMPROBACIÓN DE SALIDA: si el Info.plist no lleva los permisos de ubicación, iOS
+      # mata la app al pedir el GPS. Se comprueba ANTES de compilar.
+      - name: Comprobar los permisos del Info.plist
+        run: |
+          PLIST=nativo-ios/Info.plist
+          fallo=0
+          for clave in NSLocationWhenInUseUsageDescription NSLocationAlwaysAndWhenInUseUsageDescription; do
+            if /usr/libexec/PlistBuddy -c "Print :$clave" "$PLIST" >/dev/null 2>&1; then
+              echo "✅ $clave"
+            else
+              echo "❌ FALTA $clave"
+              fallo=1
+            fi
+          done
+          if [ "$fallo" != "0" ]; then exit 1; fi
+
+      - name: Compilar (sin firma)
+        run: |
+          cd nativo-ios
+          xcodebuild \
+            -project UbicacionesNativo.xcodeproj \
+            -target UbicacionesNativo \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      # COMPROBACIÓN QUE NO PERDONA: el mapa y el GPS tienen que estar DENTRO del
+      # binario. Si no, la app se instalaría sin mapa y no nos enteraríamos.
+      - name: Comprobar que el mapa y el GPS están dentro
+        run: |
+          APP=$(find nativo-ios/build -name 'UbicacionesNativo.app' -maxdepth 4 | head -1)
+          BIN="$APP/UbicacionesNativo"
+          echo "app: $APP"
+          echo "binario: $BIN ($(du -h "$BIN" | cut -f1))"
+          fallo=0
+          for simbolo in MKMapView CLLocationManager AVSpeechSynthesizer AVAudioEngine; do
+            if grep -aq "$simbolo" "$BIN"; then
+              echo "✅ $simbolo"
+            else
+              echo "❌ FALTA $simbolo en el binario"
+              fallo=1
+            fi
+          done
+          # Y NO debe llevar WebView: es justo lo que se ha quitado
+          if grep -aq "WKWebView" "$BIN"; then
+            echo "⚠️  el binario menciona WKWebView (no debería: la app es nativa)"
+          else
+            echo "✅ sin WKWebView (app nativa, sin web dentro)"
+          fi
+          # EL ICONO: tiene que estar DENTRO del .app (si no, sale el blanco de serie)
+          if ls "$APP"/AppIcon*.png >/dev/null 2>&1 || ls "$APP"/AppIcon*.car >/dev/null 2>&1 || [ -f "$APP/Assets.car" ]; then
+            echo "✅ el icono de la app está dentro"
+          else
+            echo "❌ FALTA el icono de la app"
+            fallo=1
+          fi
+          if [ "$fallo" != "0" ]; then exit 1; fi
+
+      - name: Empaquetar el .ipa
+        run: |
+          APP=$(find nativo-ios/build -name 'UbicacionesNativo.app' -maxdepth 4 | head -1)
+          echo "App: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry UbicacionesNativa.ipa Payload
+          ls -la UbicacionesNativa.ipa
+
+      - name: Guardar el .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ubicaciones-Nativa-ipa
+          path: UbicacionesNativa.ipa
+          retention-days: 30
