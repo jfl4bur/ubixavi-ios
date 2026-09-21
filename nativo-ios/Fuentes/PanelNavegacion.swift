@@ -1,10 +1,18 @@
-/* TANDA C · LA NAVEGACIÓN COMO APPLE MAPS
+/* LA NAVEGACIÓN COMO APPLE MAPS (imágenes 9 y 10).
 
-   · ARRIBA, la INSTRUCCIÓN del próximo giro (imagen 7): una barra negra redondeada con la
-     flechita del giro, lo que tienes que hacer y por qué calle.
-   · ABAJO, el panel redondeado con lo que llevas.
-   · Y DESLIZANDO EL PANEL HACIA ARRIBA, el menú de la imagen 8: añadir parada, compartir la
-     llegada, informar de una incidencia y las opciones de la voz (más cosas prácticas). */
+   · ARRIBA, la INSTRUCCIÓN del próximo giro: la barra negra redondeada con la flechita,
+     lo que tienes que hacer y por qué calle (con su placa de carretera).
+   · ABAJO, la barra con Llegada · min · km y el GUION: tirando de él HACIA ARRIBA con el
+     dedo sale el menú, que es justo lo que hace Apple Maps (imagen 10).
+   · El MENÚ es un panel del sistema de paneles (PanelDeMapa.swift): mismo fondo, misma
+     esquina, mismo gesto y su «Finalizar» rojo, como el de Apple.
+
+   LAS MEDIDAS son las de los pantallazos (medidas con scripts/medir-pantallazos.mjs):
+     · la instrucción: banda de 30 px → 26 pt en negrita muy gruesa;
+     · las cifras de abajo: 26 pt con la etiqueta de 15 pt (medido en la imagen 10);
+     · el guion: 50 × 5 pt;
+     · las filas del menú: 48 pt de paso.
+*/
 import SwiftUI
 import CoreLocation
 
@@ -32,32 +40,42 @@ struct BarraDeInstruccion: View {
     }
 
     var body: some View {
+        /* EL PASO SE CALCULA UNA VEZ POR REPINTADO: antes se llamaba tres veces (en el
+           icono, en el texto y en la distancia) y cada llamada recorría todos los pasos de
+           la ruta creando un `CLLocation`; y esto se repinta con cada aviso del GPS. */
+        let paso = pasoActual
         HStack(spacing: 14) {
-            Image(systemName: icono(pasoActual?.instruccion ?? ""))
-                .font(.system(size: 28, weight: .heavy))
+            Image(systemName: icono(paso?.instruccion ?? ""))
+                .font(.system(size: 30, weight: .heavy))
                 .foregroundColor(.white)
-                .frame(width: 40)
-            VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 42)
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Siguiente")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white.opacity(0.65))
-                Text(pasoActual?.instruccion ?? "Sigue recto")
-                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundColor(.white.opacity(0.6))
+                Text(paso?.instruccion ?? "Sigue recto")
+                    .font(.system(size: 26, weight: .heavy))
                     .foregroundColor(.white)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.72)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            if let km = pasoActual?.distKm {
+            if let km = paso?.distKm {
                 Text(km < 0.05 ? "Ahora" : textoDistancia(km))
-                    .font(.system(size: 18, weight: .heavy))
+                    .font(.system(size: Medida.numero, weight: .heavy))
                     .foregroundColor(Diseno.acento)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.10), lineWidth: 0.5))
+        .background(Diseno.panelDelMapa.opacity(0.94), in: RoundedRectangle(cornerRadius: Medida.radioPanel, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Medida.radioPanel, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
     }
 
     private func icono(_ texto: String) -> String {
@@ -73,7 +91,46 @@ struct BarraDeInstruccion: View {
     }
 }
 
-// ── El menú que sale deslizando el panel hacia arriba (imagen 8) ───────────────
+// ── LA BARRA DE ABAJO DURANTE LA NAVEGACIÓN (la de Apple Maps) ─────────────────
+/* Redondeada, con el guion arriba: Llegada · min · km.
+   TIRANDO DEL GUION HACIA ARRIBA sale el menú (imagen 10); tocándola, también.
+   El botón de la voz está en el menú. */
+struct BarraDeNavegacion: View {
+    @ObservedObject var estado: Estado
+    var abrirMenu: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            GuionDePanel()
+            HStack(spacing: 0) {
+                CifraConEtiqueta(valor: horaDeLlegada, etiqueta: "Llegada")
+                CifraConEtiqueta(valor: "\(Int(estado.rutaElegida?.durationMins ?? 0))", etiqueta: "min")
+                CifraConEtiqueta(valor: String(format: "%.0f", estado.rutaElegida?.distKm ?? 0), etiqueta: "km")
+            }
+        }
+        .padding(.top, 9)
+        .padding(.bottom, 12)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity)
+        .background(Diseno.panelDelMapa.opacity(0.94), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { abrirMenu() }
+        // EL GESTO HACIA ARRIBA DEL GUION: el menú, como en Apple Maps
+        .arrastrarHaciaArriba { abrirMenu() }
+        .accessibilityHint("Tira hacia arriba para ver el menú")
+    }
+
+    private var horaDeLlegada: String {
+        let minutos = estado.rutaElegida?.durationMins ?? 0
+        return Hora.corta(Date().addingTimeInterval(minutos * 60))
+    }
+}
+
+// ── El MENÚ que sale tirando de la barra hacia arriba (imagen 10) ──────────────
 struct PanelDeNavegacion: View {
     @ObservedObject var estado: Estado
     @ObservedObject var almacen: Almacen
@@ -88,110 +145,114 @@ struct PanelDeNavegacion: View {
     @State private var informando = false
     @State private var textoInforme = ""
 
+    /// LAS FILAS QUE LLEVA EL MENÚ (para que la hoja mida lo que tiene que medir):
+    /// el destino + las siete de debajo = 8. La cuenta es la del sistema de paneles
+    /// (182 + filas × 48), la misma que da los 519 pt de la hoja de la imagen 10.
+    private var cuantasFilas: Int { 8 }
+
     var body: some View {
-        VStack(spacing: 12) {
-            // Lo que llevas: llegada, minutos y km
-            HStack(spacing: 26) {
-                dato(titulo: "Llegada", valor: horaDeLlegada)
-                dato(titulo: "min", valor: "\(Int(estado.rutaElegida?.durationMins ?? 0))")
-                dato(titulo: "km", valor: String(format: "%.0f", estado.rutaElegida?.distKm ?? 0))
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 4)
+        PanelDeMapa(alto: AltoDePanel.menuNavegacion(filas: cuantasFilas)) {
+            VStack(spacing: 14) {
+                // Lo que llevas: llegada, minutos y km (como la cabecera de la imagen 10)
+                HStack(spacing: 0) {
+                    CifraConEtiqueta(valor: horaDeLlegada, etiqueta: "Llegada")
+                    CifraConEtiqueta(valor: "\(Int(estado.rutaElegida?.durationMins ?? 0))", etiqueta: "min")
+                    CifraConEtiqueta(valor: String(format: "%.0f", estado.rutaElegida?.distKm ?? 0), etiqueta: "km")
+                }
+                .padding(.horizontal, 8)
 
-            VStack(spacing: 0) {
-                // El destino (con las paradas que queden)
-                HStack(spacing: 12) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(Diseno.peligro)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(estado.destino?.name ?? "Destino")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundColor(Diseno.texto)
-                            .lineLimit(1)
-                        if estado.paradas.count > 1 {
-                            Text("\(estado.paradas.count) paradas")
-                                .font(.disEtiqueta)
-                                .foregroundColor(Diseno.apagado)
+                VStack(spacing: 0) {
+                    // El destino (con las paradas que queden)
+                    HStack(spacing: 12) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(Diseno.peligro)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(estado.destino?.name ?? "Destino")
+                                .font(.system(size: Medida.fila))
+                                .foregroundColor(Diseno.texto)
+                                .lineLimit(1)
+                            if estado.paradas.count > 1 {
+                                Text("\(estado.paradas.count) paradas")
+                                    .font(.system(size: Medida.etiqueta))
+                                    .foregroundColor(Diseno.apagado)
+                            }
                         }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, Medida.lado)
+                    .frame(minHeight: 56)
+
+                    SeparadorDePanel()
+
+                    fila(icono: "plus.circle.fill", color: Diseno.acento, titulo: "Añadir parada") {
+                        anadirParada()
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    fila(icono: "person.2.fill", color: Diseno.verde, titulo: "Compartir llegada") {
+                        compartir("Voy a \(estado.destino?.name ?? "mi destino") y llego a las \(horaDeLlegada).")
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    fila(icono: "exclamationmark.bubble.fill", color: Diseno.peligro, titulo: "Informar de una incidencia") {
+                        informando = true
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    fila(
+                        icono: vozActivada ? "speaker.wave.2.fill" : "speaker.slash.fill",
+                        color: Diseno.azul,
+                        titulo: vozActivada ? "Silenciar la voz" : "Activar la voz"
+                    ) {
+                        vozActivada.toggle()
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    fila(icono: "wrench.and.screwdriver.fill", color: Diseno.apagado, titulo: "Opciones de la voz") {
+                        abrirAjustesDeVoz()
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    fila(
+                        icono: avisosRadares ? "camera.fill" : "camera",
+                        color: Diseno.acento,
+                        titulo: avisosRadares ? "Desactivar los avisos de radares" : "Activar los avisos de radares"
+                    ) {
+                        avisosRadares.toggle()
+                    }
+                    SeparadorDePanel(sangria: 56)
+
+                    // El botón de capturar radares, a la vista o escondido (Ajustes)
+                    fila(
+                        icono: "camera.badge.ellipsis",
+                        color: Diseno.acento,
+                        titulo: capturarSiempre ? "Ocultar el botón de capturar" : "Botón de capturar a la vista"
+                    ) {
+                        capturarSiempre.toggle()
+                    }
                 }
-                .padding(.vertical, 14)
-                .padding(.horizontal, 18)
+                .background(Diseno.panelDentro, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, Medida.lado)
 
-                Divider().overlay(Color.white.opacity(0.08))
-
-                fila(icono: "plus.circle.fill", color: Diseno.acento, titulo: "Añadir parada") {
-                    anadirParada()
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(icono: "person.2.fill", color: Diseno.verde, titulo: "Compartir llegada") {
-                    compartir("Voy a \(estado.destino?.name ?? "mi destino") y llego a las \(horaDeLlegada).")
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(icono: "exclamationmark.bubble.fill", color: Diseno.peligro, titulo: "Informar de una incidencia") {
-                    informando = true
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(
-                    icono: vozActivada ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                    color: Diseno.azul,
-                    titulo: vozActivada ? "Silenciar la voz" : "Activar la voz"
-                ) {
-                    vozActivada.toggle()
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(icono: "wrench.and.screwdriver.fill", color: Diseno.apagado, titulo: "Opciones de la voz") {
-                    abrirAjustesDeVoz()
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(
-                    icono: avisosRadares ? "camera.fill" : "camera",
-                    color: Diseno.acento,
-                    titulo: avisosRadares ? "Desactivar los avisos de radares" : "Activar los avisos de radares"
-                ) {
-                    avisosRadares.toggle()
-                }
-                Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 56)
-
-                fila(
-                    icono: capturarSiempre ? "camera.badge.ellipsis" : "camera.badge.ellipsis",
-                    color: Diseno.acento,
-                    titulo: capturarSiempre ? "Ocultar el botón de capturar" : "Botón de capturar a la vista"
-                ) {
-                    capturarSiempre.toggle()
-                }
-            }
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal, 14)
-
-            // El botón de terminar, como el «Finalizar» de Apple Maps
-            Button {
-                Task {
-                    await estado.salirDeNavegacion()
+                // EL BOTÓN DE TERMINAR, como el «Finalizar» rojo de Apple Maps
+                Button {
+                    estado.salirDeNavegacion()
                     cerrar()
+                } label: {
+                    Text("Finalizar")
+                        .font(.system(size: 19, weight: .heavy))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Diseno.peligro, in: Capsule())
                 }
-            } label: {
-                Text("Finalizar")
-                    .font(.system(size: 19, weight: .heavy))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(Diseno.peligro, in: Capsule())
+                .buttonStyle(.plain)
+                .padding(.horizontal, Medida.lado)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 10)
+            .padding(.top, 2)
+            .padding(.bottom, 24)
         }
-        .padding(.top, 6)
         .alert("Informar de una incidencia", isPresented: $informando) {
             TextField("¿Qué pasa? (atasco, obra, radar…)", text: $textoInforme)
             Button("Cancelar", role: .cancel) { textoInforme = "" }
@@ -207,86 +268,10 @@ struct PanelDeNavegacion: View {
 
     private var horaDeLlegada: String {
         let minutos = estado.rutaElegida?.durationMins ?? 0
-        let formato = DateFormatter()
-        formato.dateFormat = "HH:mm"
-        return formato.string(from: Date().addingTimeInterval(minutos * 60))
-    }
-
-    private func dato(titulo: String, valor: String) -> some View {
-        VStack(spacing: 0) {
-            Text(valor)
-                .font(.system(size: 26, weight: .heavy))
-                .foregroundColor(Diseno.texto)
-            Text(titulo)
-                .font(.system(size: 14))
-                .foregroundColor(Diseno.apagado)
-        }
+        return Hora.corta(Date().addingTimeInterval(minutos * 60))
     }
 
     private func fila(icono: String, color: Color, titulo: String, accion: @escaping () -> Void) -> some View {
-        Button(action: accion) {
-            HStack(spacing: 14) {
-                Image(systemName: icono)
-                    .font(.system(size: 20))
-                    .foregroundColor(color)
-                    .frame(width: 28)
-                Text(titulo)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(Diseno.texto)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 15)
-            .padding(.horizontal, 18)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// ── LA BARRA DE ABAJO DURANTE LA NAVEGACIÓN (la de Apple Maps) ─────────────────
-/* Redondeada, con el guion arriba: Llegada · min · km, y a la derecha el botón para
-   subir el menú. Tocando el guion (o el botón) sale el menú de navegación. */
-struct BarraDeNavegacion: View {
-    @ObservedObject var estado: Estado
-    var abrirMenu: () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Capsule()
-                .fill(Color.white.opacity(0.35))
-                .frame(width: 44, height: 5)
-
-            HStack(spacing: 0) {
-                dato(titulo: "Llegada", valor: horaDeLlegada)
-                dato(titulo: "min", valor: "\(Int(estado.rutaElegida?.durationMins ?? 0))")
-                dato(titulo: "km", valor: String(format: "%.0f", estado.rutaElegida?.distKm ?? 0))
-
-            }
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity)
-        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 22))
-        .contentShape(Rectangle())
-        .onTapGesture { abrirMenu() }
-    }
-
-    private var horaDeLlegada: String {
-        let minutos = estado.rutaElegida?.durationMins ?? 0
-        let formato = DateFormatter()
-        formato.dateFormat = "HH:mm"
-        return formato.string(from: Date().addingTimeInterval(minutos * 60))
-    }
-
-    private func dato(titulo: String, valor: String) -> some View {
-        VStack(spacing: 0) {
-            Text(valor)
-                .font(.system(size: 26, weight: .heavy))
-                .foregroundColor(Diseno.texto)
-            Text(titulo)
-                .font(.system(size: 14))
-                .foregroundColor(Diseno.apagado)
-        }
-        .frame(maxWidth: .infinity)
+        FilaDePanel(icono: icono, color: color, titulo: titulo, accion: accion)
     }
 }
